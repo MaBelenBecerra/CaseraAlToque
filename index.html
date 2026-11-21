@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mi Stock · Monitor de precios y stock</title>
+<style>
+  :root { --bg:#f6f5f1; --card:#fff; --ink:#1d1d1b; --muted:#6b6a65; --line:#e3e1da;
+          --brand:#0f766e; --brand-ink:#fff; --warn:#b45309; --bad:#b91c1c; --ok:#15803d; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  header h1 { font-size:18px; margin:0; }
+  header small { color:var(--muted); display:block; font-weight:400; }
+  main { max-width:960px; margin:0 auto; padding:18px; }
+  nav { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px; }
+  nav button { border:1px solid var(--line); background:var(--card); padding:8px 14px; border-radius:999px; cursor:pointer; font:inherit; }
+  nav button.activo { background:var(--brand); color:var(--brand-ink); border-color:var(--brand); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .card h2 { font-size:16px; margin:0 0 12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; }
+  label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted); }
+  input, select, textarea { font:inherit; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink); }
+  textarea { min-height:90px; resize:vertical; }
+  .btn { background:var(--brand); color:var(--brand-ink); border:0; padding:10px 16px; border-radius:8px; font:inherit; font-weight:600; cursor:pointer; }
+  .btn.sec { background:transparent; color:var(--brand); border:1px solid var(--brand); }
+  .btn.mini { padding:5px 10px; font-size:13px; font-weight:500; }
+  .btn:disabled { opacity:.5; cursor:wait; }
+  .acciones { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:600; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .tabla { overflow-x:auto; }
+  .chip { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
+  .chip.bajo { background:#fee2e2; color:var(--bad); }
+  .chip.ok { background:#dcfce7; color:var(--ok); }
+  .chip.pend { background:#fef3c7; color:var(--warn); }
+  .muted { color:var(--muted); font-size:13px; }
+  .vacio { color:var(--muted); text-align:center; padding:18px; }
+  .pre { white-space:pre-wrap; }
+  #login { display:flex; justify-content:center; padding:40px 12px; }
+  #toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--ink); color:#fff; padding:10px 16px; border-radius:8px; display:none; max-width:90vw; z-index:10; }
+  #toast.error { background:var(--bad); }
+  .oculto { display:none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Mi Stock <small id="nombreNegocio">Monitor de precios y stock</small></h1>
+  <div id="userButton"></div>
+</header>
+
+<div id="login"></div>
+
+<main id="app" class="oculto">
+  <nav>
+    <button data-tab="inventario" class="activo">Inventario</button>
+    <button data-tab="vender">Registrar venta</button>
+    <button data-tab="compra">Nota de compra</button>
+    <button data-tab="alertas">Alertas</button>
+    <button data-tab="negocio">Mi negocio</button>
+  </nav>
+
+  <!-- INVENTARIO -->
+  <section data-panel="inventario">
+    <div class="card">
+      <h2 id="tituloForm">Agregar producto</h2>
+      <form id="formProducto">
+        <input type="hidden" name="id">
+        <div class="grid">
+          <label>Nombre<input name="nombre" required placeholder="Coca-Cola 2 L"></label>
+          <label>Unidad<input name="unidad" value="unidad" placeholder="unidad, kg, paquete"></label>
+          <label>Precio de venta (Bs)<input name="precio_venta" type="number" step="0.01" min="0" value="0"></label>
+          <label>Costo (Bs)<input name="costo" type="number" step="0.01" min="0" value="0"></label>
+          <label>Stock actual<input name="stock" type="number" step="0.01" min="0" value="0"></label>
+          <label>Stock mínimo<input name="stock_minimo" type="number" step="0.01" min="0" value="0"></label>
+        </div>
+        <div class="acciones">
+          <button class="btn" type="submit">Guardar</button>
+          <button class="btn sec oculto" type="button" id="cancelarEdicion">Cancelar</button>
+        </div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Tus productos</h2>
+      <div class="tabla"><table>
+        <thead><tr><th>Producto</th><th class="num">Stock</th><th class="num">Mínimo</th><th class="num">Costo</th><th class="num">Precio</th><th class="num">Margen</th><th></th></tr></thead>
+        <tbody id="tablaProductos"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- VENDER -->
+  <section data-panel="vender" class="oculto">
+    <div class="card">
+      <h2>Registrar venta</h2>
+      <form id="formVenta">
+        <div class="grid">
+          <label>Producto<select name="producto_id" id="selProducto" required></select></label>
+          <label>Cantidad<input name="cantidad" type="number" step="0.01" min="0.01" value="1" required></label>
+          <label>Precio unitario (Bs)<input name="precio_unitario" type="number" step="0.01" min="0" placeholder="el de la lista"></label>
+          <label>Nota<input name="nota" placeholder="opcional, ej. pedido Telegram"></label>
+        </div>
+        <div class="acciones"><button class="btn" type="submit">Registrar venta</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Últimas ventas</h2>
+      <div class="tabla"><table>
+        <thead><tr><th>Fecha</th><th>Producto</th><th class="num">Cant.</th><th class="num">Total</th><th>Nota</th></tr></thead>
+        <tbody id="tablaVentas"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- COMPRA -->
+  <section data-panel="compra" class="oculto">
+    <div class="card">
+      <h2>Subir nota de compra</h2>
+      <p class="muted">Escribí lo que compraste o sacale una foto a la nota o factura. Gemini la lee, suma el stock y te avisa si cambiaron los costos.</p>
+      <form id="formCompra">
+        <label>Texto (opcional)<textarea name="texto" placeholder="Compré 2 paquetes de 6 cocas a 60 Bs cada paquete y 50 panes a 0,60"></textarea></label>
+        <label style="margin-top:10px">Foto (opcional)<input name="foto" type="file" accept="image/*" capture="environment"></label>
+        <div class="acciones"><button class="btn" type="submit">Enviar nota</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Notas enviadas <button class="btn sec mini" id="refrescarCompras" type="button">Actualizar</button></h2>
+      <div class="tabla"><table>
+        <thead><tr><th>Fecha</th><th>Nota</th><th>Estado</th><th>Resultado</th></tr></thead>
+        <tbody id="tablaCompras"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ALERTAS -->
+  <section data-panel="alertas" class="oculto">
+    <div class="card">
+      <h2>Alertas y recomendaciones <button class="btn sec mini" id="refrescarAlertas" type="button">Actualizar</button></h2>
+      <div id="listaAlertas"></div>
+    </div>
+  </section>
+
+  <!-- NEGOCIO -->
+  <section data-panel="negocio" class="oculto">
+    <div class="card">
+      <h2>Mi negocio</h2>
+      <form id="formNegocio">
+        <div class="grid">
+          <label>Nombre del negocio<input name="nombre_negocio" placeholder="Tienda Doña Rosa"></label>
+          <label>Correo para alertas<input name="email" type="email"></label>
+          <label>Chat ID de Telegram<input name="telegram_chat_id" placeholder="123456789"></label>
+        </div>
+        <p class="muted">Para saber tu Chat ID: abrí tu bot en Telegram y mandale /start; después escribile a <b>@userinfobot</b> y copiá el número que te da.</p>
+        <div class="acciones"><button class="btn" type="submit">Guardar</button></div>
+      </form>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script type="module">
+// ⚙️ CAMBIÁ ESTOS TRES DATOS ------------------------------------------
+const PUBLISHABLE_KEY = 'pk_test_PEGA_ACA_TU_CLAVE_DE_CLERK';
+const SUPABASE_URL    = 'https://TU-PROYECTO.supabase.co';
+const SUPABASE_KEY    = 'PEGA_ACA_TU_PUBLISHABLE_O_ANON_KEY_DE_SUPABASE';
+// ----------------------------------------------------------------------
+
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const bs = n => Number(n ?? 0).toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fecha = f => new Date(f).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' });
+
+function aviso(texto, error = false) {
+  const t = $('#toast');
+  t.textContent = texto; t.className = error ? 'error' : ''; t.style.display = 'block';
+  clearTimeout(aviso._t); aviso._t = setTimeout(() => t.style.display = 'none', 4500);
+}
+
+// ---------- Cargar Clerk desde su CDN (la dirección sale de la clave) ----------
+function cargarScript(src, attrs = {}) {
+  return new Promise((ok, mal) => {
+    const s = document.createElement('script');
+    s.src = src; s.async = true; s.crossOrigin = 'anonymous';
+    Object.entries(attrs).forEach(([k, v]) => s.setAttribute(k, v));
+    s.onload = ok; s.onerror = () => mal(new Error('No se pudo cargar ' + src));
+    document.head.appendChild(s);
+  });
+}
+const clerkDomain = atob(PUBLISHABLE_KEY.split('_')[2]).slice(0, -1);
+await cargarScript(`https://${clerkDomain}/npm/@clerk/ui@1/dist/ui.browser.js`).catch(() => {});
+await cargarScript(`https://${clerkDomain}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`,
+                   { 'data-clerk-publishable-key': PUBLISHABLE_KEY });
+const Clerk = window.Clerk;
+await Clerk.load(window.__internal_ClerkUICtor ? { ui: { ClerkUI: window.__internal_ClerkUICtor } } : {});
+
+// ---------- Supabase usando el token de Clerk ----------
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  accessToken: async () => (await Clerk.session?.getToken()) ?? null,
+});
+
+let productos = [];
+
+if (!Clerk.isSignedIn) {
+  Clerk.mountSignIn($('#login'));
+  Clerk.addListener(({ user }) => { if (user) location.reload(); });
+} else {
+  $('#login').classList.add('oculto');
+  $('#app').classList.remove('oculto');
+  Clerk.mountUserButton($('#userButton'));
+  iniciar();
+}
+
+async function iniciar() {
+  document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('nav button').forEach(x => x.classList.toggle('activo', x === b));
+    document.querySelectorAll('[data-panel]').forEach(p => p.classList.toggle('oculto', p.dataset.panel !== b.dataset.tab));
+    if (b.dataset.tab === 'alertas') cargarAlertas();
+    if (b.dataset.tab === 'compra') cargarCompras();
+    if (b.dataset.tab === 'vender') cargarVentas();
+  });
+  await asegurarNegocio();
+  await cargarProductos();
+}
+
+// ---------- Negocio ----------
+async function asegurarNegocio() {
+  const { data, error } = await supabase.from('negocios').select('*').maybeSingle();
+  if (error) return aviso('No pude conectar con Supabase: ' + error.message, true);
+  let negocio = data;
+  if (!negocio) {
+    const email = Clerk.user?.primaryEmailAddress?.emailAddress || '';
+    const r = await supabase.from('negocios').insert({ email }).select().single();
+    if (r.error) return aviso(r.error.message, true);
+    negocio = r.data;
+  }
+  const f = $('#formNegocio');
+  f.nombre_negocio.value = negocio.nombre_negocio || '';
+  f.email.value = negocio.email || '';
+  f.telegram_chat_id.value = negocio.telegram_chat_id || '';
+  if (negocio.nombre_negocio) $('#nombreNegocio').textContent = negocio.nombre_negocio;
+}
+
+$('#formNegocio').onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target;
+  const datos = { nombre_negocio: f.nombre_negocio.value.trim(), email: f.email.value.trim(),
+                  telegram_chat_id: f.telegram_chat_id.value.trim() };
+  const { error } = await supabase.from('negocios').update(datos).eq('user_id', Clerk.user.id);
+  if (error) return aviso(error.message, true);
+  if (datos.nombre_negocio) $('#nombreNegocio').textContent = datos.nombre_negocio;
+  aviso('Datos guardados');
+};
+
+// ---------- Productos ----------
+async function cargarProductos() {
+  const { data, error } = await supabase.from('productos').select('*').order('nombre');
+  if (error) return aviso(error.message, true);
+  productos = data;
+  $('#tablaProductos').innerHTML = data.length ? data.map(p => {
+    const bajo = Number(p.stock_minimo) > 0 && Number(p.stock) <= Number(p.stock_minimo);
+    const margen = Number(p.precio_venta) > 0 ? Math.round((p.precio_venta - p.costo) / p.precio_venta * 100) + '%' : '—';
+    return `<tr>
+      <td><b>${esc(p.nombre)}</b><br><span class="muted">${esc(p.unidad)}</span></td>
+      <td class="num"><span class="chip ${bajo ? 'bajo' : 'ok'}">${esc(Number(p.stock))}</span></td>
+      <td class="num">${esc(Number(p.stock_minimo))}</td>
+      <td class="num">${bs(p.costo)}</td>
+      <td class="num">${bs(p.precio_venta)}</td>
+      <td class="num">${margen}</td>
+      <td><button class="btn sec mini" data-editar="${p.id}">Editar</button>
+          <button class="btn sec mini" data-borrar="${p.id}">Borrar</button></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" class="vacio">Todavía no cargaste productos.</td></tr>';
+
+  $('#selProducto').innerHTML = data.map(p =>
+    `<option value="${p.id}">${esc(p.nombre)} · quedan ${esc(Number(p.stock))} · ${bs(p.precio_venta)} Bs</option>`).join('');
+
+  document.querySelectorAll('[data-editar]').forEach(b => b.onclick = () => editarProducto(Number(b.dataset.editar)));
+  document.querySelectorAll('[data-borrar]').forEach(b => b.onclick = () => borrarProducto(Number(b.dataset.borrar)));
+}
+
+function editarProducto(id) {
+  const p = productos.find(x => x.id === id); const f = $('#formProducto');
+  ['id','nombre','unidad','precio_venta','costo','stock','stock_minimo'].forEach(k => f[k].value = p[k]);
+  $('#tituloForm').textContent = 'Editar: ' + p.nombre;
+  $('#cancelarEdicion').classList.remove('oculto');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function limpiarFormProducto() {
+  const f = $('#formProducto'); f.reset(); f.id.value = '';
+  $('#tituloForm').textContent = 'Agregar producto';
+  $('#cancelarEdicion').classList.add('oculto');
+}
+$('#cancelarEdicion').onclick = limpiarFormProducto;
+
+async function borrarProducto(id) {
+  const p = productos.find(x => x.id === id);
+  if (!confirm(`¿Borrar "${p.nombre}"? También se borran sus ventas.`)) return;
+  const { error } = await supabase.from('productos').delete().eq('id', id);
+  if (error) return aviso(error.message, true);
+  aviso('Producto borrado'); cargarProductos();
+}
+
+$('#formProducto').onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target;
+  const datos = {
+    nombre: f.nombre.value.trim(), unidad: f.unidad.value.trim() || 'unidad',
+    precio_venta: Number(f.precio_venta.value || 0), costo: Number(f.costo.value || 0),
+    stock: Number(f.stock.value || 0), stock_minimo: Number(f.stock_minimo.value || 0),
+  };
+  const q = f.id.value
+    ? supabase.from('productos').update({ ...datos, actualizado_en: new Date().toISOString() }).eq('id', f.id.value)
+    : supabase.from('productos').insert(datos);
+  const { error } = await q;
+  if (error) return aviso(error.message, true);
+  aviso(f.id.value ? 'Producto actualizado' : 'Producto agregado');
+  limpiarFormProducto(); cargarProductos();
+};
+
+// ---------- Ventas ----------
+$('#formVenta').onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target; const btn = f.querySelector('button'); btn.disabled = true;
+  const datos = { producto_id: Number(f.producto_id.value), cantidad: Number(f.cantidad.value),
+                  nota: f.nota.value.trim() || null };
+  if (f.precio_unitario.value) datos.precio_unitario = Number(f.precio_unitario.value);
+  const { error } = await supabase.from('ventas').insert(datos);
+  btn.disabled = false;
+  if (error) return aviso(error.message, true);   // ej. "Stock insuficiente..."
+  aviso('Venta registrada');
+  f.cantidad.value = 1; f.precio_unitario.value = ''; f.nota.value = '';
+  await cargarProductos(); cargarVentas();
+};
+
+async function cargarVentas() {
+  const { data, error } = await supabase.from('ventas')
+    .select('creado_en, cantidad, total, nota, productos(nombre)')
+    .order('creado_en', { ascending: false }).limit(15);
+  if (error) return aviso(error.message, true);
+  $('#tablaVentas').innerHTML = data.length ? data.map(v => `<tr>
+      <td>${fecha(v.creado_en)}</td><td>${esc(v.productos?.nombre)}</td>
+      <td class="num">${esc(Number(v.cantidad))}</td><td class="num">${bs(v.total)}</td><td>${esc(v.nota)}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="vacio">Sin ventas todavía.</td></tr>';
+}
+
+// ---------- Notas de compra ----------
+$('#formCompra').onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target; const btn = f.querySelector('button');
+  const texto = f.texto.value.trim(); const archivo = f.foto.files[0];
+  if (!texto && !archivo) return aviso('Escribí algo o subí una foto', true);
+  btn.disabled = true;
+  let foto_path = null;
+  if (archivo) {
+    const ext = (archivo.name.split('.').pop() || 'jpg').toLowerCase();
+    foto_path = `${Clerk.user.id}/${Date.now()}.${ext}`;
+    const up = await supabase.storage.from('notas-compra').upload(foto_path, archivo, { contentType: archivo.type });
+    if (up.error) { btn.disabled = false; return aviso('No se pudo subir la foto: ' + up.error.message, true); }
+  }
+  const { error } = await supabase.from('compras').insert({ texto: texto || null, foto_path });
+  btn.disabled = false;
+  if (error) return aviso(error.message, true);
+  f.reset();
+  aviso('Nota enviada. En unos segundos la procesa n8n.');
+  cargarCompras(); setTimeout(() => { cargarCompras(); cargarProductos(); }, 12000);
+};
+$('#refrescarCompras').onclick = () => { cargarCompras(); cargarProductos(); };
+
+async function cargarCompras() {
+  const { data, error } = await supabase.from('compras').select('*').order('creado_en', { ascending: false }).limit(15);
+  if (error) return aviso(error.message, true);
+  $('#tablaCompras').innerHTML = data.length ? data.map(c => {
+    const chip = c.estado === 'procesada' ? 'ok' : c.estado === 'error' ? 'bajo' : 'pend';
+    let res = '';
+    if (c.resultado?.cambios) res = c.resultado.cambios.map(x =>
+      `${esc(x.producto)}: +${esc(x.cantidad)} a ${bs(x.costo_nuevo)} Bs${x.variacion_pct ? ` (${x.variacion_pct > 0 ? '+' : ''}${esc(x.variacion_pct)}%)` : ''}`).join('<br>');
+    if (c.resultado?.no_encontrados?.length) res += `<br><span class="muted">Sin coincidencia: ${c.resultado.no_encontrados.map(x => esc(x.nombre)).join(', ')}</span>`;
+    if (c.resultado?.error) res = `<span class="muted">${esc(c.resultado.error).slice(0, 200)}</span>`;
+    return `<tr><td>${fecha(c.creado_en)}</td><td>${esc(c.texto) || ''}${c.foto_path ? ' 📷' : ''}</td>
+      <td><span class="chip ${chip}">${esc(c.estado)}</span></td><td>${res}</td></tr>`;
+  }).join('') : '<tr><td colspan="4" class="vacio">Todavía no subiste notas.</td></tr>';
+}
+
+// ---------- Alertas ----------
+$('#refrescarAlertas').onclick = cargarAlertas;
+async function cargarAlertas() {
+  const { data, error } = await supabase.from('alertas').select('*').order('creado_en', { ascending: false }).limit(20);
+  if (error) return aviso(error.message, true);
+  $('#listaAlertas').innerHTML = data.length ? data.map(a =>
+    `<div class="card"><div class="muted">${fecha(a.creado_en)}</div><div class="pre">${esc(a.mensaje)}</div></div>`).join('')
+    : '<p class="vacio">Sin alertas. Cuando un producto llegue a su mínimo, aparece acá.</p>';
+}
+</script>
+</body>
+</html>
