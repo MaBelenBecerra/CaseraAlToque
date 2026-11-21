@@ -1,14 +1,13 @@
 # Monitor Inteligente de Precios y Stock (POS ligero)
 
-Comerciantes de Santa Cruz que llevan sus ventas por Telegram inician sesión con **Clerk**, registran ventas y suben notas de compra (texto o foto) a **Supabase**. **n8n** recibe cada cambio por webhook, revisa si el stock bajó del mínimo, le pide a **Gemini** una recomendación de reposición y le avisa al dueño por **Telegram** o **correo**.
+Comerciantes de Santa Cruz registran ventas y suben notas de compra (texto o foto) a **Supabase** sin una pantalla de login: la app crea una sesión anónima por navegador. **n8n** recibe cada cambio por webhook, revisa si el stock bajó del mínimo, le pide a **Gemini** una recomendación de reposición y le avisa al dueño por **Telegram** o **correo**.
 
 ## Cómo funciona
 
 ```mermaid
 flowchart LR
-  U(["Comerciante"]) -->|"login"| C["Clerk"]
-  U -->|"vende / carga producto / sube nota"| W["index.html"]
-  W -->|"token de Clerk + RLS"| S[("Supabase")]
+  U(["Comerciante"]) -->|"vende / carga producto / sube nota"| W["index.html"]
+  W -->|"sesión anónima + RLS"| S[("Supabase")]
   S -->|"trigger + pg_net: webhook con secreto"| N["n8n"]
   N -->|"¿stock ≤ mínimo?"| G["Gemini"]
   N -->|"lee foto/texto de la nota"| G
@@ -18,7 +17,8 @@ flowchart LR
 
 - **Venta registrada** → un trigger descuenta el stock → otro trigger avisa a n8n → si `stock ≤ stock_minimo`, Gemini mira las ventas de los últimos 30 días y los costos, recomienda cuánto reponer y n8n te lo manda.
 - **Nota de compra** → n8n baja la foto, Gemini la lee y relaciona cada renglón con tus productos → se suma el stock, se actualiza el costo, queda el historial y te avisa si algún costo subió 10% o más.
-- **Seguridad**: cada comerciante ve sólo sus datos (RLS con el `sub` del token de Clerk). El webhook de n8n rechaza cualquier aviso que no traiga el secreto compartido.
+- **Seguridad**: RLS sigue activado; cada sesión anónima sólo ve sus propios datos (`auth.uid()`). El webhook de n8n rechaza cualquier aviso que no traiga el secreto compartido.
+- **Demo**: cada navegador obtiene un negocio independiente. La sesión anónima se conserva en ese navegador; borrar sus datos del sitio o cambiar de navegador puede dejar inaccesibles esos datos. No uses información real o sensible.
 
 ## Archivos
 
@@ -26,7 +26,7 @@ flowchart LR
 |---|---|
 | `01_supabase.sql` | Tablas, seguridad, triggers, funciones y bucket de fotos. Se corre una vez en Supabase. |
 | `02_n8n_workflow.json` | El workflow para importar en n8n (22 nodos). |
-| `index.html` | La app web: login, inventario, ventas, notas de compra, alertas. |
+| `index.html` | La app web: sesión anónima, inventario, ventas, notas de compra y alertas. |
 
 ---
 
@@ -39,14 +39,12 @@ flowchart LR
    - **Publishable key** (o `anon`): va en la página web.
    - **service_role** (pestaña *Legacy API keys*; si no la tenés, la *Secret key*): va **sólo** en n8n. Nunca en la página.
 
-## Paso 2 · Crear Clerk y conectarlo con Supabase (15 min)
+## Paso 2 · Habilitar sesiones anónimas en Supabase (2 min)
 
-1. Entrá a [dashboard.clerk.com](https://dashboard.clerk.com), creá una aplicación y elegí cómo inician sesión (correo, Google…).
-2. En **API keys** copiá la **Publishable key** (`pk_test_...`).
-3. Abrí la página de integración con Supabase de Clerk (**Integrations → Supabase**, o el asistente de "Connect with Supabase") y tocá **Activate Supabase integration**. Esto agrega `"role": "authenticated"` al token y te muestra tu **Clerk domain** (`algo.clerk.accounts.dev`). Copialo.
-4. En Supabase: **Authentication → Sign In / Providers → Third Party Auth → Add provider → Clerk**, pegá el dominio y guardá.
+1. En Supabase, habilitá **Anonymous Sign-Ins** en **Authentication → Sign In / Providers**.
+2. Para una demo pública, habilitá CAPTCHA y límites de tasa de Auth en los ajustes de Supabase para reducir el abuso de creación de sesiones anónimas.
 
-Con esto, Supabase acepta el token de Clerk y `auth.jwt()->>'sub'` es el id de cada comerciante.
+La app crea una sesión anónima automáticamente. Supabase le asigna un UUID; RLS limita las consultas a ese UUID. No desactives RLS ni publiques una clave `service_role`. Si ya tenías datos vinculados a Clerk, no aparecerán en las sesiones anónimas; probá con un proyecto nuevo o planificá una migración controlada.
 
 ## Paso 3 · Bot de Telegram y clave de Gemini (10 min)
 
@@ -80,7 +78,7 @@ Desde ahora, cada cambio de stock y cada nota de compra le llega a n8n.
 
 ## Paso 5 · Correr la página (5 min)
 
-1. Abrí `index.html` en tu editor y completá arriba del script: `PUBLISHABLE_KEY` (Clerk), `SUPABASE_URL` y `SUPABASE_KEY` (la publishable/anon, **no** la secreta).
+1. Abrí `index.html` en tu editor y completá arriba del script `SUPABASE_URL` y `SUPABASE_KEY` (la publishable/anon, **no** la secreta).
 2. Serví la carpeta (no la abras con doble clic):
 
    ```bash
@@ -88,7 +86,7 @@ Desde ahora, cada cambio de stock y cada nota de compra le llega a n8n.
    # o: npx serve -l 5500
    ```
 
-3. Abrí `http://localhost:5500`, registrate y andá a **Mi negocio**: poné el nombre, tu correo y tu Chat ID de Telegram.
+3. Abrí `http://localhost:5500`; se inicia una sesión de demostración automáticamente. Andá a **Mi negocio** y poné el nombre, tu correo y tu Chat ID de Telegram.
 
 ## Paso 6 · Probar el circuito completo
 
@@ -102,8 +100,7 @@ Desde ahora, cada cambio de stock y cada nota de compra le llega a n8n.
 
 | Lo que ves | Qué probar |
 |---|---|
-| La app dice `No pude conectar con Supabase` o no ves tus productos | Falta el paso 2.3–2.4 (integración Clerk ↔ Supabase), o pusiste la clave equivocada en `SUPABASE_KEY`. |
-| No aparece la pantalla de login | `PUBLISHABLE_KEY` mal copiada, o abriste el archivo con doble clic. |
+| La app no inicia la sesión de demostración | Habilitá Anonymous Sign-Ins en Supabase, revisá `SUPABASE_URL` y `SUPABASE_KEY`, y serví la carpeta en vez de abrir el archivo con doble clic. |
 | Vendo y n8n no recibe nada | Revisá `privado.config_n8n` (URL de **producción**, workflow **publicado**). En Supabase podés ver los intentos con `select * from net._http_response order by created desc limit 5;` |
 | n8n dice "el secreto no coincide" | El `secreto` del nodo Configuración y el de `privado.config_n8n` tienen que ser idénticos. |
 | Gemini da error 404 de modelo | Cambiá `modelo_gemini` por uno de la lista de modelos de Google (por ejemplo `gemini-3.5-flash-lite`). |
@@ -114,9 +111,9 @@ Desde ahora, cada cambio de stock y cada nota de compra le llega a n8n.
 ## Cómo presentarlo en la demo
 
 1. **El problema**: "Doña Rosa anota sus pedidos en Telegram y se entera de que no tiene Coca cuando el cliente ya la pidió. Y no sabe que su proveedor le subió el precio."
-2. **La solución**: login con Clerk, datos en Supabase protegidos por persona, n8n vigila cada cambio y Gemini da la recomendación.
+2. **La solución**: sesión anónima, datos en Supabase protegidos por RLS, n8n vigila cada cambio y Gemini da la recomendación.
 3. **En vivo**: registrá una venta → mostrá el mensaje de Telegram llegando → subí una foto de una nota real → mostrá cómo sube el stock y aparece la variación de costo.
-4. **Muestra la seguridad**: abrí la app con otra cuenta y no ve nada de la primera.
+4. **Muestra la seguridad**: abrí la app en otro navegador; tendrá una sesión y un negocio independientes.
 
 ## Ideas para sumar
 
